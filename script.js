@@ -1,5 +1,3 @@
-//const { Model } = require("firebase-admin/machine-learning");
-
 const themeToggle = document.querySelector(".theme-toggle");
 const promptForm = document.querySelector(".prompt-form");
 const promptInput = document.querySelector(".prompt-input");
@@ -23,77 +21,55 @@ const examplePrompts = [
   "A Japanese shrine during cherry blossom season with lanterns and misty mountains",
 ];
 
-// Set theme based on saved preference or system default
+// Theme initialization
 (() => {
   const savedTheme = localStorage.getItem("theme");
-  const systemPrefersDark = window.matchMedia(
-    "(prefers-color-scheme: dark)"
-  ).matches;
-  const isDarkTheme =
-    savedTheme === "dark" || (!savedTheme && systemPrefersDark);
+  const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDarkTheme = savedTheme === "dark" || (!savedTheme && systemPrefersDark);
   document.body.classList.toggle("dark-theme", isDarkTheme);
-  themeToggle.querySelector("i").className = isDarkTheme
-    ? "fa-solid fa-sun"
-    : "fa-solid fa-moon";
+  themeToggle.querySelector("i").className = isDarkTheme ? "fa-solid fa-sun" : "fa-solid fa-moon";
 })();
 
-// Switch between light and dark themes
 const toggleTheme = () => {
   const isDarkTheme = document.body.classList.toggle("dark-theme");
   localStorage.setItem("theme", isDarkTheme ? "dark" : "light");
-  themeToggle.querySelector("i").className = isDarkTheme
-    ? "fa-solid fa-sun"
-    : "fa-solid fa-moon";
+  themeToggle.querySelector("i").className = isDarkTheme ? "fa-solid fa-sun" : "fa-solid fa-moon";
 };
 
-// Calculate width/height based on chosen ratio
 const getImageDimensions = (aspectRatio, baseSize = 512) => {
   const [width, height] = aspectRatio.split("/").map(Number);
   const scaleFactor = baseSize / Math.sqrt(width * height);
-
-  let calculatedWidth = Math.round(width * scaleFactor);
-  let calculatedHeight = Math.round(height * scaleFactor);
-
-  // Ensure dimensions are multiples of 16 (AI model requirements)
-  calculatedWidth = Math.floor(calculatedWidth / 16) * 16;
-  calculatedHeight = Math.floor(calculatedHeight / 16) * 16;
-
+  let calculatedWidth = Math.floor((width * scaleFactor) / 16) * 16;
+  let calculatedHeight = Math.floor((height * scaleFactor) / 16) * 16;
   return { width: calculatedWidth, height: calculatedHeight };
 };
 
-// Replace loading spinner with the actual image
 const updateImageCard = (imgIndex, imgUrl) => {
   const imgCard = document.getElementById(`img-card-${imgIndex}`);
   if (!imgCard) return;
-
   imgCard.classList.remove("loading");
-  imgCard.innerHTML = `<img src="${imgUrl}" class="result-img" />
-                        <div class="img-overlay">
-                          <a href="${imgUrl}" class="img-download-btn" download="${Date.now()}.png">
-                          <i class="fa-solid fa-download"></i>
-                          </a>
-                        </div>"]`;
+  imgCard.innerHTML = `
+    <img src="${imgUrl}" class="result-img" />
+    <div class="img-overlay">
+      <a href="${imgUrl}" class="img-download-btn" download="${Date.now()}.png">
+        <i class="fa-solid fa-download"></i>
+      </a>
+    </div>`;
 };
-//send request to create image
-const generateImages = async (
-  selectedModel,
-  imageCount,
-  aspectRatio,
-  promptText
-) => {
-  const MODEL_URL = `https://api-inference.huggingface.co/models/${selectedModel}`;
+
+const generateImages = async (selectedModel, imageCount, aspectRatio, promptText) => {
+  const MODEL_URL = `https://router.huggingface.co/hf-inference/models/${selectedModel.trim()}`;
   const { width, height } = getImageDimensions(aspectRatio);
   generateBtn.setAttribute("disabled", true);
 
-  //create array of image generation promises
   const imagePromises = Array.from({ length: imageCount }, async (_, i) => {
     try {
       const response = await fetch(MODEL_URL, {
+        method: "POST",
         headers: {
           Authorization: `Bearer ${API_KEY}`,
           "Content-Type": "application/json",
         },
-        method: "POST",
         body: JSON.stringify({
           inputs: promptText,
           parameters: { width, height },
@@ -101,17 +77,21 @@ const generateImages = async (
         }),
       });
 
-      if (!response.ok) throw new Error((await response.json())?.error);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text);
+      }
 
-      //convert response to an image url and update the image card
       const result = await response.blob();
       updateImageCard(i, URL.createObjectURL(result));
     } catch (error) {
       console.log(error);
       const imgCard = document.getElementById(`img-card-${i}`);
-      imgCard.classList.replace("loading", "error");
-      imgCard.querySelector(".status-text").textContent =
-        "Generation failed! Check console for more details.";
+      if (imgCard) {
+        imgCard.classList.replace("loading", "error");
+        imgCard.querySelector(".status-text").textContent =
+          "Generation failed! Check console for more details.";
+      }
     }
   });
 
@@ -119,45 +99,32 @@ const generateImages = async (
   generateBtn.removeAttribute("disabled");
 };
 
-//Create placeholder cards with loading spinner
-const createImageCards = (
-  selectedModel,
-  imageCount,
-  aspectRatio,
-  promptText
-) => {
+const createImageCards = (selectedModel, imageCount, aspectRatio, promptText) => {
   gridGallery.innerHTML = "";
-
   for (let i = 0; i < imageCount; i++) {
-    gridGallery.innerHTML += `<div class="img-card loading" id="img-card-${i}" style="aspect-ratio: ${aspectRatio}">
-            <div class="status-container">
-              <div class="spinner"></div>
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <p class="status-text">Generating ...</p>
-            </div>
-          </div>`;
+    gridGallery.innerHTML += `
+      <div class="img-card loading" id="img-card-${i}" style="aspect-ratio: ${aspectRatio}">
+        <div class="status-container">
+          <div class="spinner"></div>
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <p class="status-text">Generating ...</p>
+        </div>
+      </div>`;
   }
-
   generateImages(selectedModel, imageCount, aspectRatio, promptText);
 };
 
-//Handle form submission
 const handleFormSubmit = (e) => {
   e.preventDefault();
-
-  //Get form values
   const selectedModel = modelSelect.value;
   const imageCount = parseInt(countSelect.value) || 1;
   const aspectRatio = ratioSelect.value || "1/1";
   const promptText = promptInput.value.trim();
-
   createImageCards(selectedModel, imageCount, aspectRatio, promptText);
 };
 
-//fill prompt input with random example
 promptBtn.addEventListener("click", () => {
-  const prompt =
-    examplePrompts[Math.floor(Math.random() * examplePrompts.length)];
+  const prompt = examplePrompts[Math.floor(Math.random() * examplePrompts.length)];
   promptInput.value = prompt;
   promptInput.focus();
 });
